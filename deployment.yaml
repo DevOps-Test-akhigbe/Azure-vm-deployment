@@ -1,0 +1,76 @@
+pool:
+  name: Azure Pipelines
+variables:
+  ARTIFACT_NAME: 'vm-deployment'
+
+steps:
+- task: ArchiveFiles@2
+  displayName: Archive
+  inputs:
+    rootFolderOrFile: '$(Build.SourcesDirectory)'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/$(ARTIFACT_NAME)_$(Build.BuildId)'
+
+- task: JFrog.jfrog-artifactory-vsts-extension.artifactory-generic-upload.ArtifactoryGenericUpload@2
+  displayName: 'Artifactory Generic Upload'
+  inputs:
+    artifactoryService: 'ARTIFACTORY-SERVER'
+    fileSpec: |
+     {
+       "files": [
+         {
+           "pattern": "$(Build.ArtifactStagingDirectory)/$(ARTIFACT_NAME)_$(Build.BuildId).zip",
+           "target": "maven-local-prerelease/"
+         }
+       ]
+     }
+    collectBuildInfo: true
+
+- task: JFrog.jfrog-artifactory-vsts-extension.artifactory-publish-build-info.ArtifactoryPublishBuildInfo@1
+  displayName: 'Artifactory Publish Build Info'
+  inputs:
+    artifactoryService: 'ARTIFACTORY-SERVER'
+
+- task: JFrog.jfrog-artifactory-vsts-extension.artifactory-properties-task.ArtifactoryProperties@1
+  displayName: 'Artifactory set Properties'
+  inputs:
+    artifactoryService: 'ARTIFACTORY-SERVER'
+    setProps: 'name=ctg-devops'
+    fileSpec: |
+     {
+       "files": [
+         {
+           "pattern": "$(Build.ArtifactStagingDirectory)/$(ARTIFACT_NAME)_$(Build.BuildId).zip",
+           "target": "maven-local-prerelease/"
+         }
+       ]
+     }
+
+- task: JFrog.jfrog-artifactory-vsts-extension.artifactory-generic-download.ArtifactoryGenericDownload@3
+  displayName: 'Artifactory Generic Download'
+  inputs:
+    connection: 'ARTIFACTORY-SERVER'
+    fileSpec: |
+     {
+       "files": [
+         {
+           "pattern": "maven-local-prerelease/$(ARTIFACT_NAME)_$(Build.BuildId).zip",
+           "target": "."
+         }
+       ]
+     }
+
+- task: ExtractFiles@1
+  displayName: 'Extract files '
+  inputs:
+    destinationFolder: '$(Build.ArtifactStagingDirectory)'
+
+- task: AzureResourceManagerTemplateDeployment@3
+  displayName: 'ARM-VM-DEPLOYMENT'
+  inputs:
+    azureResourceManagerConnection: 'ADF_CONN'
+    subscriptionId: '347fc977-961b-4016-bf42-a96ab3b85478'
+    resourceGroupName: 'ctg-a5665-resource-east'
+    location: 'East US 2'
+    csmFile: '$(System.DefaultWorkingDirectory)/template.json'
+    csmParametersFile: '$(System.DefaultWorkingDirectory)/parameters.json'
+    deploymentMode: Complete
